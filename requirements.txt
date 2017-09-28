@@ -1,0 +1,3 @@
+cupy
+pynvrtc
+torch
