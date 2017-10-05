@@ -4,6 +4,10 @@ This repository contains a PyTorch implementation of [Salesforce Research](https
 
 The QRNN provides similar accuracy to the LSTM but can be betwen 2 and 17 times faster than the highly optimized NVIDIA cuDNN LSTM implementation depending on the use case.
 
+To install, simply run:
+
+`pip install git+https://github.com/salesforce/pytorch-qrnn`
+
 If you use this code or our results in your research, please cite:
 
 ```
