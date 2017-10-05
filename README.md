@@ -6,7 +6,7 @@ The QRNN provides similar accuracy to the LSTM but can be betwen 2 and 17 times 
 
 To install, simply run:
 
-`pip install git+https://github.com/salesforce/pytorch-qrnn`
+`pip install cupy pynvrtc git+https://github.com/salesforce/pytorch-qrnn`
 
 If you use this code or our results in your research, please cite:
 
