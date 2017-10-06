@@ -1,2 +1,2 @@
 from .forget_mult import ForgetMult
-from .qrnn import QRNNLayer
+from .qrnn import QRNN, QRNNLayer

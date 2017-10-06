@@ -105,6 +105,68 @@ class QRNNLayer(nn.Module):
 
         return H, C[-1:, :, :]
 
+
+class QRNN(torch.nn.Module):
+    r"""Applies a multiple layer Quasi-Recurrent Neural Network (QRNN) to an input sequence.
+
+    Args:
+        input_size: The number of expected features in the input x.
+        hidden_size: The number of features in the hidden state h. If not specified, the input size is used.
+        num_layers: The number of QRNN layers to produce.
+        layers: List of preconstructed QRNN layers to use for the QRNN module (optional).
+        save_prev_x: Whether to store previous inputs for use in future convolutional windows (i.e. for a continuing sequence such as in language modeling). If true, you must call reset to remove cached previous values of x. Default: False.
+        window: Defines the size of the convolutional window (how many previous tokens to look when computing the QRNN values). Supports 1 and 2. Default: 1.
+        zoneout: Whether to apply zoneout (i.e. failing to update elements in the hidden state) to the hidden state updates. Default: 0.
+        output_gate: If True, performs QRNN-fo (applying an output gate to the output). If False, performs QRNN-f. Default: True.
+        use_cuda: If True, uses fast custom CUDA kernel. If False, uses naive for loop. Default: True.
+
+    Inputs: X, hidden
+        - X (seq_len, batch, input_size): tensor containing the features of the input sequence.
+        - hidden (layers, batch, hidden_size): tensor containing the initial hidden state for the QRNN.
+
+    Outputs: output, h_n
+        - output (seq_len, batch, hidden_size): tensor containing the output of the QRNN for each timestep.
+        - h_n (layers, batch, hidden_size): tensor containing the hidden state for t=seq_len
+    """
+
+    def __init__(self, input_size, hidden_size,
+                 num_layers=1, bias=True, batch_first=False,
+                 dropout=0, bidirectional=False, layers=None, **kwargs):
+        assert bidirectional == False, 'Bidirectional QRNN is not yet supported'
+        assert batch_first == False, 'Batch first mode is not yet supported'
+        assert bias == True, 'Removing underlying bias is not yet supported'
+
+        super(QRNN, self).__init__()
+
+        self.layers = torch.nn.ModuleList(layers if layers else [QRNNLayer(input_size, hidden_size, **kwargs) for _ in range(num_layers)])
+
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = len(layers) if layers else num_layers
+        self.bias = bias
+        self.batch_first = batch_first
+        self.dropout = dropout
+        self.bidirectional = bidirectional
+
+    def reset(self):
+        r'''If your convolutional window is greater than 1, you must reset at the beginning of each new sequence'''
+        [layer.reset() for layer in self.layers]
+
+    def forward(self, input, hidden=None):
+        next_hidden = []
+
+        for i, layer in enumerate(self.layers):
+            input, hn = layer(input, None if hidden is None else hidden[i])
+            next_hidden.append(hn)
+
+            if self.dropout != 0 and i < len(self.layers) - 1:
+                input = torch.nn.functional.dropout(input, p=self.dropout, training=self.training, inplace=False)
+
+        next_hidden = torch.cat(next_hidden, 0).view(self.num_layers, *next_hidden[0].size()[-2:])
+
+        return input, next_hidden
+
+
 if __name__ == '__main__':
     seq_len, batch_size, hidden_size = 2, 2, 16
     size = (seq_len, batch_size, hidden_size)
