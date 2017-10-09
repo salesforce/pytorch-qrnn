@@ -1,5 +1,7 @@
+# cython: infer_types=True
+#
 
-cdef void recurrent_forget_mult(float *dest, const float* F, const float* X,
+cdef void recurrent_forget_mult(float *dst, const float* F, const float* X,
         int nN, int nB, int nO) nogil:
     cdef int ts, b, h, prev_step, this_step
     # ts is timestep index, b is batch index, h is hidden index
@@ -8,12 +10,12 @@ cdef void recurrent_forget_mult(float *dest, const float* F, const float* X,
         # To move timesteps, we step HIDDEN * BATCH
         # To move batches, we move HIDDEN
         # To move neurons, we move +- 1
-        prev_step = (ts-1) * nH * nB
-        this_step = (ts-0) * nH * nB
+        prev_step = (ts-1) * nO * nB
+        this_step = (ts-0) * nO * nB
         for b in range(nB):
-            prev_step += b * nH
-            this_step += b * nH
-            for h in range(nH):
+            prev_step += b * nO
+            this_step += b * nO
+            for h in range(nO):
                 dst[this_step]  = (F[i] * X[i]) + ((1 - F[i]) * dst[prev_step])
                 i += 1
                 this_step += 1
@@ -31,12 +33,12 @@ cdef void bwd_recurrent_forget_mult(float *dF, float *dX, float *dHinit,
         # To move timesteps, we step HIDDEN * BATCH
         # To move batches, we move HIDDEN
         # To move neurons, we move +- 1
-        prev_step = (ts-1) * nH * nB
-        this_step = (ts-0) * nH * nB
+        prev_step = (ts-1) * nO * nB
+        this_step = (ts-0) * nO * nB
         for b in range(nB):
-            prev_step += b * nH
-            this_step += b * nH
-            for h in range(nH):
+            prev_step += b * nO
+            this_step += b * nO
+            for h in range(nO):
                 running_f += dH[this_step]
                 # Gradient of X
                 dX[i] = F[i] * running_f
