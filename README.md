@@ -27,8 +27,10 @@ Requirements are provided in `requirements.txt`.
 
 ## Usage
 
-The QRNN API is meant to be drop-in compatible with the [LSTM](http://pytorch.org/docs/master/_modules/torch/nn/modules/rnn.html#LSTM) for most standard use cases.
+The QRNN API is meant to be drop-in compatible with the [LSTM](http://pytorch.org/docs/master/_modules/torch/nn/modules/rnn.html#LSTM) for many standard use cases.
 As such, the easiest thing to do is replace any `GRU` or `LSTM` module with the `QRNN`.
+
+Note: bidirectional QRNN is not yet supported though will be in the near future.
 
 ```python
 import torch
@@ -38,7 +40,7 @@ seq_len, batch_size, hidden_size = 7, 20, 256
 size = (seq_len, batch_size, hidden_size)
 X = torch.autograd.Variable(torch.rand(size), requires_grad=True).cuda()
 
-qrnn = QRNN(hidden_size, hidden_size, num_layers=2)
+qrnn = QRNN(hidden_size, hidden_size, num_layers=2, dropout=0.4)
 qrnn.cuda()
 output, hidden = qrnn(X)
 
@@ -112,3 +114,14 @@ Example usage of the ForgetMult module: `output = ForgetMult()(f, x, hidden)`.
         - hidden_init (batch, input_size): tensor containing the initial hidden state for the recurrence (h_{t-1}).
         - cuda: If True, use the fast element-wise CUDA kernel for recurrence. If False, uses naive for loop. Default: True.
 ```
+## Want to help out?
+
+First, thanks! :)
+
+Open tasks that are interesting:
+
++ Modify the `ForgetMult` CUDA kernel to produce a `BackwardForgetMult`. This will enable a bidirectional QRNN. The input should be the same - `f` and `x` - but the kernel should walk backwards through the inputs.
++ Bidirectional QRNN support (requires the modification above)
++ Enable the QRNN layers to work in multi-GPU environments
++ Support PyTorch's `PackedSequence` such that variable length sequences are correctly masked
++ Show how to use the underlying fast recurrence operator `ForgetMult` in other generic ways
