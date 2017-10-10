@@ -25,6 +25,12 @@ This codebase requires Python 3, [PyTorch](http://pytorch.org/), [pynvrtc](https
 While the codebase contains a CPU implementation of the QRNN, the GPU QRNN implementation is used by default if possible.
 Requirements are provided in `requirements.txt`.
 
+## Example Usage
+
+We've updated the previously released Salesforce Research [AWD-LSTM language modeling](https://github.com/salesforce/awd-lstm-lm) codebase to support use of the `AWD-QRNN`.
+With the same number of parameters as the LSTM and less well tuned hyper parameters, the QRNN model trains over twice as quickly and achieves nearly equivalent state-of-the-art language modeling results.
+For full details, refer to the [AWD-LSTM-LM repository](https://github.com/salesforce/awd-lstm-lm).
+
 ## Usage
 
 The QRNN API is meant to be drop-in compatible with the [LSTM](http://pytorch.org/docs/master/_modules/torch/nn/modules/rnn.html#LSTM) for many standard use cases.
