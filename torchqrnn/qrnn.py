@@ -170,14 +170,21 @@ class QRNN(torch.nn.Module):
 
 if __name__ == '__main__':
     seq_len, batch_size, hidden_size = 2, 2, 16
+    seq_len, batch_size, hidden_size = 35, 8, 32
     size = (seq_len, batch_size, hidden_size)
     X = Variable(torch.rand(size), requires_grad=True).cuda()
     print(X.size())
 
     qrnn = QRNNLayer(hidden_size, hidden_size)
     qrnn.cuda()
-    Y, hidden = qrnn(X)
-    print(Y.size())
+    Y, _ = qrnn(X)
+
+    qrnn.use_cuda = False
+    Z, _ = qrnn(X)
+
+    diff = (Y - Z).sum().data[0]
+    print('Total difference between QRNN(use_cuda=True) and QRNN(use_cuda=False) results:', diff)
+    assert diff < 1e-5, 'CUDA and non-CUDA QRNN layers return different results'
 
     from torch.autograd import gradcheck
     inputs = [X,]

@@ -81,12 +81,11 @@ class CPUForgetMult(torch.nn.Module):
         forgets = f.split(1, dim=0)
         prev_h = hidden_init
         for i, h in enumerate((f * x).split(1, dim=0)):
-            h = h.squeeze()
             if prev_h is not None: h = h + (1 - forgets[i]) * prev_h
-            result.append(h)
+            result.append(h.squeeze())
             prev_h = h
         ###
-        return torch.cat(result, dim=0)
+        return torch.stack(result)
 
 
 class GPUForgetMult(torch.autograd.Function):
