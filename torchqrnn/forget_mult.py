@@ -78,7 +78,7 @@ class CPUForgetMult(torch.nn.Module):
     def forward(self, f, x, hidden_init=None):
         result = []
         ###
-        forgets = forget.split(1, dim=0)
+        forgets = f.split(1, dim=0)
         prev_h = hidden_init
         for i, h in enumerate((f * x).split(1, dim=0)):
             h = h.squeeze()
