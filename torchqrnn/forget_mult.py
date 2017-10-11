@@ -114,11 +114,15 @@ class GPUForgetMult(torch.autograd.Function):
 
     def forward(self, f, x, hidden_init=None):
         seq_size, batch_size, hidden_size = f.size()
-        result = f.new(seq_size + 1, batch_size, hidden_size).zero_()
+        result = f.new(seq_size + 1, batch_size, hidden_size)
+        # We only zero the result array (result[0]) if we don't set a hidden initial state
+        # All other values (result[1:]) are overwritten by default
         if hidden_init is not None: result[0, :, :] = hidden_init
+        else: result = result.zero_()
         ###
-        grid = (math.ceil(hidden_size / 256), math.ceil(batch_size / 4))
-        self.forget_mult(grid=grid, block=(256, 4), args=[result.data_ptr(), f.data_ptr(), x.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
+        grid_hidden_size = min(hidden_size, 512)
+        grid = (math.ceil(hidden_size / grid_hidden_size), batch_size)
+        self.forget_mult(grid=grid, block=(grid_hidden_size, 1), args=[result.data_ptr(), f.data_ptr(), x.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
         self.save_for_backward(f, x, hidden_init)
         self.result = result
         return result[1:, :, :]
@@ -128,12 +132,14 @@ class GPUForgetMult(torch.autograd.Function):
         h = self.result
         ###
         seq_size, batch_size, hidden_size = f.size()
-        grad_f = f.new(*f.size()).zero_()
-        grad_x = f.new(*f.size()).zero_()
-        grad_h_init = f.new(batch_size, hidden_size).zero_()
+        # Zeroing is not necessary as these will be overwritten
+        grad_f = f.new(*f.size())
+        grad_x = f.new(*f.size())
+        grad_h_init = f.new(batch_size, hidden_size)
         ###
-        grid = (math.ceil(hidden_size / 256), math.ceil(batch_size / 4))
-        self.bwd_forget_mult(grid=grid, block=(256, 4), args=[h.data_ptr(), f.data_ptr(), x.data_ptr(), grad_h.data_ptr(), grad_f.data_ptr(), grad_x.data_ptr(), grad_h_init.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
+        grid_hidden_size = min(hidden_size, 512)
+        grid = (math.ceil(hidden_size / grid_hidden_size), batch_size)
+        self.bwd_forget_mult(grid=grid, block=(grid_hidden_size, 1), args=[h.data_ptr(), f.data_ptr(), x.data_ptr(), grad_h.data_ptr(), grad_f.data_ptr(), grad_x.data_ptr(), grad_h_init.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
         ###
         if hidden_init is not None:
             return grad_f, grad_x, grad_h_init

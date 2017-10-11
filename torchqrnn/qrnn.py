@@ -65,11 +65,11 @@ class QRNNLayer(nn.Module):
         # Matrix multiplication for the three outputs: Z, F, O
         Y = self.linear(source)
         # Convert the tensor back to (batch, seq_len, len([Z, F, O]) * hidden_size)
-        Y = Y.view(seq_len, batch_size, 3 * self.hidden_size if self.output_gate else 2 * self.hidden_size)
         if self.output_gate:
+            Y = Y.view(seq_len, batch_size, 3 * self.hidden_size)
             Z, F, O = Y.chunk(3, dim=2)
-            O = torch.nn.functional.sigmoid(O)
         else:
+            Y = Y.view(seq_len, batch_size, 2 * self.hidden_size)
             Z, F = Y.chunk(2, dim=2)
         ###
         Z = torch.nn.functional.tanh(Z)
@@ -88,6 +88,7 @@ class QRNNLayer(nn.Module):
         # This is a null op if the tensor is already contiguous
         Z = Z.contiguous()
         F = F.contiguous()
+        # The O gate doesn't need to be contiguous as it isn't used in the CUDA kernel
 
         # Forget Mult
         # For testing QRNN without ForgetMult CUDA kernel, C = Z * F may be useful
@@ -95,7 +96,7 @@ class QRNNLayer(nn.Module):
 
         # Apply (potentially optional) output gate
         if self.output_gate:
-            H = O * C
+            H = torch.nn.functional.sigmoid(O) * C
         else:
             H = C
 
