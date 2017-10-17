@@ -1,7 +1,8 @@
 import math
 import torch
 from torch.autograd import Variable
-from cupy.cuda import function
+if torch.cuda.is_available():
+  from cupy.cuda import function
 from pynvrtc.compiler import Program
 from collections import namedtuple
 
@@ -101,10 +102,10 @@ class GPUForgetMult(torch.autograd.Function):
     def compile():
         program = Program(kernel.encode(), 'recurrent_forget_mult.cu'.encode())
         ptx = program.compile()
-        
+
         m = function.Module()
         m.load(bytes(ptx.encode()))
-        
+
         GPUForgetMult.forget_mult = m.get_function('recurrent_forget_mult')
         GPUForgetMult.bwd_forget_mult = m.get_function('bwd_recurrent_forget_mult')
 
@@ -228,7 +229,7 @@ if __name__ == '__main__':
     print('=-=-' * 5)
     residual = (resulta - resultb)
     print(residual.abs().sum().data[0])
- 
+
     # Had to loosen gradient checking, potentially due to general floating point badness?
     from torch.autograd import gradcheck
     inputs = [forget, a, last_h]
