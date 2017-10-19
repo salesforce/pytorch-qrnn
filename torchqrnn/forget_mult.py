@@ -90,29 +90,32 @@ class CPUForgetMult(torch.nn.Module):
 
 
 class GPUForgetMult(torch.autograd.Function):
-    forget_mult = None
-    bwd_forget_mult = None
-    stream = None
+    configured_gpus = {}
+    ptx = None
     def __init__(self):
         super(GPUForgetMult, self).__init__()
-        if not self.forget_mult or not self.bwd_forget_mult:
-            GPUForgetMult.compile()
 
-    @staticmethod
-    def compile():
-        program = Program(kernel.encode(), 'recurrent_forget_mult.cu'.encode())
-        ptx = program.compile()
+    def compile(self):
+        if self.ptx is None:
+            program = Program(kernel.encode(), 'recurrent_forget_mult.cu'.encode())
+            GPUForgetMult.ptx = program.compile()
 
-        m = function.Module()
-        m.load(bytes(ptx.encode()))
+        if torch.cuda.current_device() not in GPUForgetMult.configured_gpus:
+            m = function.Module()
+            m.load(bytes(self.ptx.encode()))
 
-        GPUForgetMult.forget_mult = m.get_function('recurrent_forget_mult')
-        GPUForgetMult.bwd_forget_mult = m.get_function('bwd_recurrent_forget_mult')
+            self.forget_mult = m.get_function('recurrent_forget_mult')
+            self.bwd_forget_mult = m.get_function('bwd_recurrent_forget_mult')
 
-        Stream = namedtuple('Stream', ['ptr'])
-        GPUForgetMult.stream = Stream(ptr=torch.cuda.current_stream().cuda_stream)
+            Stream = namedtuple('Stream', ['ptr'])
+            self.stream = Stream(ptr=torch.cuda.current_stream().cuda_stream)
+
+            GPUForgetMult.configured_gpus[torch.cuda.current_device()] = (self.forget_mult, self.bwd_forget_mult, self.stream)
+
+        self.forget_mult, self.bwd_forget_mult, self.stream = GPUForgetMult.configured_gpus[torch.cuda.current_device()]
 
     def forward(self, f, x, hidden_init=None):
+        self.compile()
         seq_size, batch_size, hidden_size = f.size()
         result = f.new(seq_size + 1, batch_size, hidden_size)
         # We only zero the result array (result[0]) if we don't set a hidden initial state
@@ -128,6 +131,7 @@ class GPUForgetMult(torch.autograd.Function):
         return result[1:, :, :]
 
     def backward(self, grad_h):
+        self.compile()
         f, x, hidden_init = self.saved_tensors
         h = self.result
         ###
