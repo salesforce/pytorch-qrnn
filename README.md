@@ -1,5 +1,7 @@
 # Quasi-Recurrent Neural Network (QRNN) for PyTorch
 
+Updated to support multi-GPU environments via `DataParallel` - see the the `multigpu_dataparallel.py` example.
+
 This repository contains a PyTorch implementation of [Salesforce Research](https://einstein.ai/)'s [Quasi-Recurrent Neural Networks](https://arxiv.org/abs/1611.01576) paper.
 
 The QRNN provides similar accuracy to the LSTM but can be betwen 2 and 17 times faster than the highly optimized NVIDIA cuDNN LSTM implementation depending on the use case.
@@ -128,6 +130,5 @@ Open tasks that are interesting:
 
 + Modify the `ForgetMult` CUDA kernel to produce a `BackwardForgetMult`. This will enable a bidirectional QRNN. The input should be the same - `f` and `x` - but the kernel should walk backwards through the inputs.
 + Bidirectional QRNN support (requires the modification above)
-+ Enable the QRNN layers to work in multi-GPU environments
 + Support PyTorch's `PackedSequence` such that variable length sequences are correctly masked
 + Show how to use the underlying fast recurrence operator `ForgetMult` in other generic ways
