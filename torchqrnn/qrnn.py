@@ -57,7 +57,11 @@ class QRNNLayer(nn.Module):
             source = X
         elif self.window == 2:
             # Construct the x_{t-1} tensor with optional x_{-1}, otherwise a zeroed out value for x_{-1}
-            Xm1 = [self.prevX if self.prevX is not None else X[:1, :, :] * 0, X[:-1, :, :]]
+            Xm1 = []
+            Xm1.append(self.prevX if self.prevX is not None else X[:1, :, :] * 0)
+            # Note: in case of len(X) == 1, X[:-1, :, :] results in slicing of empty tensor == bad
+            if len(X) > 1:
+                Xm1.append(X[:-1, :, :])
             Xm1 = torch.cat(Xm1, 0)
             # Convert two (seq_len, batch_size, hidden) tensors to (seq_len, batch_size, 2 * hidden)
             source = torch.cat([X, Xm1], 2)
