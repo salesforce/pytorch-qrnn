@@ -82,7 +82,10 @@ class CPUForgetMult(torch.nn.Module):
         prev_h = hidden_init
         for i, h in enumerate((f * x).split(1, dim=0)):
             if prev_h is not None: h = h + (1 - forgets[i]) * prev_h
-            result.append(h.squeeze())
+            # h is (1, batch, hidden) when it needs to be (batch_hidden)
+            # Calling squeeze will result in badness if batch size is 1
+            h = h.view(h.size()[1:])
+            result.append(h)
             prev_h = h
         ###
         return torch.stack(result)
@@ -195,6 +198,7 @@ if __name__ == '__main__':
     print('=-=-' * 5)
 
     resulta = ForgetMult()(forget, a, last_h, use_cuda=True)
+    print(resulta.size())
     loss = resulta.pow(2).sum()
     loss.backward()
 
