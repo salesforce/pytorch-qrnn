@@ -4,7 +4,7 @@ Updated to support multi-GPU environments via `DataParallel` - see the the `mult
 
 This repository contains a PyTorch implementation of [Salesforce Research](https://einstein.ai/)'s [Quasi-Recurrent Neural Networks](https://arxiv.org/abs/1611.01576) paper.
 
-The QRNN provides similar accuracy to the LSTM but can be betwen 2 and 17 times faster than the highly optimized NVIDIA cuDNN LSTM implementation depending on the use case.
+The QRNN provides similar accuracy to the LSTM but can be between 2 and 17 times faster than the highly optimized NVIDIA cuDNN LSTM implementation depending on the use case.
 
 To install, simply run:
 
@@ -84,7 +84,7 @@ QRNN(input_size, hidden_size, num_layers, dropout=0):
 The included QRNN layer supports convolutional windows of size 1 or 2 but will be extended in the future to support arbitrary convolutions.
 
 If you are using convolutional windows of size 2 (i.e. looking at the inputs from two previous timesteps to compute the input) and want to run over a long sequence in batches, such as when using BPTT, you can set `save_prev_x=True` and call `reset` when you wish to reset the cached previous inputs.
- 
+
 If you want flexibility in the definition of each QRNN layer, you can construct individual `QRNNLayer` modules and pass them to the `QRNN` module using the `layer` argument.
 
 ## Speed
@@ -95,8 +95,8 @@ For full information, refer to the [Quasi-Recurrent Neural Networks](https://arx
 
 ![Figure 4 from QRNN paper](images/qrnn_speed.png)
 
-Pictured above is Figure 4 from the QRNN paper:  
-*Left: Training speed for two-layer 640-unit PTB LM on a batch of 20 examples of 105 timesteps. “RNN” and “softmax” include the forward and backward times, while “optimization overhead” includes gradient clipping, L2 regularization, and SGD computations.  
+Pictured above is Figure 4 from the QRNN paper:
+*Left: Training speed for two-layer 640-unit PTB LM on a batch of 20 examples of 105 timesteps. “RNN” and “softmax” include the forward and backward times, while “optimization overhead” includes gradient clipping, L2 regularization, and SGD computations.
 Right: Inference speed advantage of a 320-unit QRNN layer alone over an equal-sized cuDNN LSTM layer for data with the given batch size and sequence length. Training results are similar.*
 
 ## Extending the QRNN speed advantage to other recurrent architectures with ForgetMult
