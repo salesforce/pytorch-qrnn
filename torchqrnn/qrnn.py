@@ -53,6 +53,7 @@ class QRNNLayer(nn.Module):
 
     def forward(self, X, hidden=None):
         seq_len, batch_size, _ = X.size()
+
         source = None
         if self.window == 1:
             source = X
@@ -66,6 +67,7 @@ class QRNNLayer(nn.Module):
             Xm1 = torch.cat(Xm1, 0)
             # Convert two (seq_len, batch_size, hidden) tensors to (seq_len, batch_size, 2 * hidden)
             source = torch.cat([X, Xm1], 2)
+
         # Matrix multiplication for the three outputs: Z, F, O
         Y = self.linear(source)
         # Convert the tensor back to (batch, seq_len, len([Z, F, O]) * hidden_size)
@@ -78,6 +80,7 @@ class QRNNLayer(nn.Module):
         ###
         Z = torch.nn.functional.tanh(Z)
         F = torch.nn.functional.sigmoid(F)
+
         # If zoneout is specified, we perform dropout on the forget gates in F
         # If an element of F is zero, that means the corresponding neuron keeps the old value
         if self.zoneout:
@@ -162,9 +165,7 @@ class QRNN(torch.nn.Module):
         super(QRNN, self).__init__()
 
         self.num_directions = 2 if bidirectional else 1
-
         self.layers = torch.nn.ModuleList(layers if layers else [QRNNLayer(input_size if l == 0 else hidden_size * self.num_directions, hidden_size, bidirectional=bidirectional, **kwargs) for l in range(num_layers)])
-
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = len(layers) if layers else num_layers
@@ -190,6 +191,7 @@ class QRNN(torch.nn.Module):
 
             if self.dropout != 0 and i < len(self.layers) - 1:
                 input = torch.nn.functional.dropout(input, p=self.dropout, training=self.training, inplace=False)
+
         next_hidden = torch.cat(next_hidden, 0).view(self.num_layers * self.num_directions, batch_size, self.hidden_size)
 
         return input, next_hidden
