@@ -99,7 +99,7 @@ class GPUForgetMult(torch.autograd.Function):
 
     def compile(self):
         if self.ptx is None:
-            program = Program(kernel.encode(), 'recurrent_forget_mult.cu'.encode())
+            program = Program(kernel, 'recurrent_forget_mult.cu')
             GPUForgetMult.ptx = program.compile()
 
         if torch.cuda.current_device() not in GPUForgetMult.configured_gpus:
