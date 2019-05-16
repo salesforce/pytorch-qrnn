@@ -8,7 +8,6 @@ else:
     from .forget_mult import ForgetMult
 
 
-
 class BiDirQRNNLayer(nn.Module):
     def __init__(self, input_size, hidden_size=None, save_prev_x=False, zoneout=0, window=1, output_gate=True,
                  use_cuda=True):
@@ -25,15 +24,17 @@ class BiDirQRNNLayer(nn.Module):
         self.output_gate = output_gate
         self.use_cuda = use_cuda
 
-        self.forward_qrnn = QRNNLayer(input_size, hidden_size=hidden_size, save_prev_x=save_prev_x, zoneout=zoneout, window=window,
+        self.forward_qrnn = QRNNLayer(input_size, hidden_size=hidden_size, save_prev_x=save_prev_x, zoneout=zoneout,
+                                      window=window,
                                       output_gate=output_gate, use_cuda=use_cuda)
-        self.backward_qrnn = QRNNLayer(input_size, hidden_size=hidden_size, save_prev_x=save_prev_x, zoneout=zoneout, window=window,
+        self.backward_qrnn = QRNNLayer(input_size, hidden_size=hidden_size, save_prev_x=save_prev_x, zoneout=zoneout,
+                                       window=window,
                                        output_gate=output_gate, use_cuda=use_cuda)
 
     def forward(self, X, hidden=None):
         if not hidden is None:
-            fwd, h_fwd = self.forward_qrnn(X, hidden=hidden[:hidden.shape[0] / 2])
-            bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]), hidden=hidden[hidden.shape[0] / 2:])
+            fwd, h_fwd = self.forward_qrnn(X, hidden=hidden[:, hidden.shape[0] / 2])
+            bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]), hidden=hidden[:, hidden.shape[0] / 2:])
         else:
             fwd, h_fwd = self.forward_qrnn(X)
             bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]))
@@ -61,10 +62,12 @@ class QRNNLayer(nn.Module):
         - h_n (batch, hidden_size): tensor containing the hidden state for t=seq_len
     """
 
-    def __init__(self, input_size, hidden_size=None, save_prev_x=False, zoneout=0, window=1, output_gate=True, use_cuda=True):
+    def __init__(self, input_size, hidden_size=None, save_prev_x=False, zoneout=0, window=1, output_gate=True,
+                 use_cuda=True):
         super(QRNNLayer, self).__init__()
 
-        assert window in [1, 2], "This QRNN implementation currently only handles convolutional window of size 1 or size 2"
+        assert window in [1,
+                          2], "This QRNN implementation currently only handles convolutional window of size 1 or size 2"
         self.window = window
         self.input_size = input_size
         self.hidden_size = hidden_size if hidden_size else input_size
@@ -75,7 +78,8 @@ class QRNNLayer(nn.Module):
         self.use_cuda = use_cuda
 
         # One large matmul with concat is faster than N small matmuls and no concat
-        self.linear = nn.Linear(self.window * self.input_size, 3 * self.hidden_size if self.output_gate else 2 * self.hidden_size)
+        self.linear = nn.Linear(self.window * self.input_size,
+                                3 * self.hidden_size if self.output_gate else 2 * self.hidden_size)
 
     def reset(self):
         # If you are saving the previous value of x, you should call this when starting with a new state
@@ -176,7 +180,8 @@ class QRNN(torch.nn.Module):
 
         if bidirectional:
             self.layers = torch.nn.ModuleList(
-                layers if layers else [BiDirQRNNLayer(input_size if l == 0 else hidden_size*2, hidden_size, **kwargs) for l in
+                layers if layers else [BiDirQRNNLayer(input_size if l == 0 else hidden_size * 2, hidden_size, **kwargs)
+                                       for l in
                                        range(num_layers)])
         else:
             self.layers = torch.nn.ModuleList(
@@ -239,6 +244,7 @@ if __name__ == '__main__':
     assert diff < 1e-5, 'CUDA and non-CUDA QRNN layers return different results'
 
     from torch.autograd import gradcheck
-    inputs = [X,]
+
+    inputs = [X, ]
     test = gradcheck(QRNNLayer(hidden_size, hidden_size).cuda(), inputs)
     print(test)
