@@ -33,7 +33,7 @@ class BiDirQRNNLayer(nn.Module):
     def forward(self, X, hidden=None):
         if not hidden is None:
             fwd, h_fwd = self.forward_qrnn(X, hidden=hidden[:hidden.shape[0] / 2])
-            bwd, h_bwd = self.backward_qrnn(X[::-1, :, :], hidden=hidden[hidden.shape[0] / 2:])
+            bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]), hidden=hidden[hidden.shape[0] / 2:])
         else:
             fwd, h_fwd = self.forward_qrnn(X)
             bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]))
@@ -169,7 +169,6 @@ class QRNN(torch.nn.Module):
     def __init__(self, input_size, hidden_size,
                  num_layers=1, bias=True, batch_first=False,
                  dropout=0, bidirectional=False, layers=None, **kwargs):
-        assert bidirectional == False, 'Bidirectional QRNN is not yet supported'
         assert batch_first == False, 'Batch first mode is not yet supported'
         assert bias == True, 'Removing underlying bias is not yet supported'
 
