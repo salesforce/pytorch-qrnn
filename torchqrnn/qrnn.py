@@ -8,6 +8,38 @@ else:
     from .forget_mult import ForgetMult
 
 
+
+class BiDirQRNNLayer(nn.Module):
+    def __init__(self, input_size, hidden_size=None, save_prev_x=False, zoneout=0, window=1, output_gate=True,
+                 use_cuda=True):
+        super(BiDirQRNNLayer, self).__init__()
+
+        assert window in [1,
+                          2], "This QRNN implementation currently only handles convolutional window of size 1 or size 2"
+        self.window = window
+        self.input_size = input_size
+        self.hidden_size = hidden_size if hidden_size else input_size
+        self.zoneout = zoneout
+        self.save_prev_x = save_prev_x
+        self.prevX = None
+        self.output_gate = output_gate
+        self.use_cuda = use_cuda
+
+        self.forward_qrnn = QRNNLayer(input_size, hidden_size=hidden_size, save_prev_x=save_prev_x, zoneout=zoneout, window=window,
+                                      output_gate=output_gate, use_cuda=use_cuda)
+        self.backward_qrnn = QRNNLayer(input_size, hidden_size=hidden_size, save_prev_x=save_prev_x, zoneout=zoneout, window=window,
+                                       output_gate=output_gate, use_cuda=use_cuda)
+
+    def forward(self, X, hidden=None):
+        if not hidden is None:
+            fwd, h_fwd = self.forward_qrnn(X, hidden=hidden[:hidden.shape[0] / 2])
+            bwd, h_bwd = self.backward_qrnn(X[::-1, :, :], hidden=hidden[hidden.shape[0] / 2:])
+        else:
+            fwd, h_fwd = self.forward_qrnn(X)
+            bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]))
+        return torch.cat([fwd, bwd], dim=-1), torch.cat([h_fwd, h_bwd], dim=-1)
+
+
 class QRNNLayer(nn.Module):
     r"""Applies a single layer Quasi-Recurrent Neural Network (QRNN) to an input sequence.
 
@@ -143,8 +175,14 @@ class QRNN(torch.nn.Module):
 
         super(QRNN, self).__init__()
 
-        self.layers = torch.nn.ModuleList(layers if layers else [QRNNLayer(input_size if l == 0 else hidden_size, hidden_size, **kwargs) for l in range(num_layers)])
-
+        if bidirectional:
+            self.layers = torch.nn.ModuleList(
+                layers if layers else [BiDirQRNNLayer(input_size if l == 0 else hidden_size*2, hidden_size, **kwargs) for l in
+                                       range(num_layers)])
+        else:
+            self.layers = torch.nn.ModuleList(
+                layers if layers else [QRNNLayer(input_size if l == 0 else hidden_size, hidden_size, **kwargs) for l in
+                                       range(num_layers)])
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = len(layers) if layers else num_layers
