@@ -32,13 +32,17 @@ class BiDirQRNNLayer(nn.Module):
                                        output_gate=output_gate, use_cuda=use_cuda)
 
     def forward(self, X, hidden=None):
-        if not hidden is None:
-            fwd, h_fwd = self.forward_qrnn(X, hidden=hidden[:, hidden.shape[0] / 2])
-            bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]), hidden=hidden[:, hidden.shape[0] / 2:])
-        else:
-            fwd, h_fwd = self.forward_qrnn(X)
-            bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]))
-        return torch.cat([fwd, bwd], dim=-1), torch.cat([h_fwd, h_bwd], dim=-1)
+        fwd, h_fwd = self.forward_qrnn(X, hidden=hidden)
+        bwd, h_bwd = self.backward_qrnn(torch.flip(X, [0]), hidden=hidden)
+        return torch.flip(torch.cat([fwd, bwd], dim=-1), [0]), torch.cat([h_fwd, h_bwd], dim=-1)
+
+
+def fast_tanh(x):
+    return x / (1 + x.abs())
+
+
+def fast_sigmoid(x):
+    return (x / 2) / (1 + x.abs()) + 0.5
 
 
 class QRNNLayer(nn.Module):
@@ -112,8 +116,8 @@ class QRNNLayer(nn.Module):
             Y = Y.view(seq_len, batch_size, 2 * self.hidden_size)
             Z, F = Y.chunk(2, dim=2)
         ###
-        Z = torch.nn.functional.tanh(Z)
-        F = torch.nn.functional.sigmoid(F)
+        Z = fast_tanh(Z)  # torch.nn.functional.tanh(Z)
+        F = fast_sigmoid(F)  # torch.nn.functional.sigmoid(F)
 
         # If zoneout is specified, we perform dropout on the forget gates in F
         # If an element of F is zero, that means the corresponding neuron keeps the old value
@@ -136,7 +140,7 @@ class QRNNLayer(nn.Module):
 
         # Apply (potentially optional) output gate
         if self.output_gate:
-            H = torch.nn.functional.sigmoid(O) * C
+            H = fast_sigmoid(O) * C  # torch.nn.functional.sigmoid(O) * C
         else:
             H = C
 
@@ -173,6 +177,7 @@ class QRNN(torch.nn.Module):
     def __init__(self, input_size, hidden_size,
                  num_layers=1, bias=True, batch_first=False,
                  dropout=0, bidirectional=False, layers=None, **kwargs):
+        # assert bidirectional == False, 'Bidirectional QRNN is not yet supported'
         assert batch_first == False, 'Batch first mode is not yet supported'
         assert bias == True, 'Removing underlying bias is not yet supported'
 
@@ -187,6 +192,7 @@ class QRNN(torch.nn.Module):
             self.layers = torch.nn.ModuleList(
                 layers if layers else [QRNNLayer(input_size if l == 0 else hidden_size, hidden_size, **kwargs) for l in
                                        range(num_layers)])
+
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = len(layers) if layers else num_layers
