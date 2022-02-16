@@ -12,6 +12,7 @@ extern "C"
 __global__ void recurrent_forget_mult(float *dst, const float *f, const float *x, int SEQ, int BATCH, int HIDDEN)
 {
   /*
+  This is the forward pass for forget_mult.
   Note: destination is assumed to be one timestep longer than f or x where dst[0] = h_{-1}
   This means dst array has a separate index than that of f or x
   */
@@ -39,9 +40,10 @@ __global__ void recurrent_forget_mult(float *dst, const float *f, const float *x
 }
 
 extern "C"
-__global__ void bwd_recurrent_forget_mult(const float *h, const float *f, const float *x, const float *gh, float *gf, float *gx, float *ghinit, int SEQ, int BATCH, int HIDDEN)
+__global__ void recurrent_forget_mult_bwd(const float *h, const float *f, const float *x, const float *gh, float *gf, float *gx, float *ghinit, int SEQ, int BATCH, int HIDDEN)
 {
   /*
+  This is the backward pass for forget_mult.
   Note: h is assumed to be one timestep longer than f, x, gf, gx, or gh where dst[0] = h_{-1}
   This means dst array has a separate index than that of f or x
   */
@@ -67,20 +69,80 @@ __global__ void bwd_recurrent_forget_mult(const float *h, const float *f, const 
   }
   ghinit[bid * HIDDEN + hid] = running_f;
 }
+
+extern "C"
+__global__ void recurrent_bwd_forget_mult(float *dst, const float *f, const float *x, int SEQ, int BATCH, int HIDDEN)
+{
+  /*
+  This is the forward pass for a backward_forget_mult.
+  Note: destination is assumed to be one timestep longer than f or x where dst[0] = h_{-1}
+  This means dst array has a separate index than that of f or x
+  */
+  int hid = blockIdx.x * blockDim.x + threadIdx.x;
+  int bid = blockIdx.y * blockDim.y + threadIdx.y;
+  if(hid >= HIDDEN || bid >= BATCH)
+     return;
+  //
+  for (int ts = SEQ; ts > 0; ts--) {
+     // To move timesteps, we step HIDDEN * BATCH
+     // To move batches, we move HIDDEN
+     // To move neurons, we move +- 1
+     // Note: dst[dst_i] = ts * 100 + bid * 10 + hid; is useful for debugging
+
+     int i           = (ts - 1) * HIDDEN * BATCH + bid * HIDDEN + hid;
+     int dst_i       = (ts - 1) * HIDDEN * BATCH + bid * HIDDEN + hid;
+     int dst_iplus1  = (ts - 0) * HIDDEN * BATCH + bid * HIDDEN + hid;
+     dst[dst_i]      = f[i] * x[i];
+     dst[dst_i]      += (1 - f[i]) * dst[dst_iplus1];
+  }
+}
+
+extern "C"
+__global__ void recurrent_bwd_forget_mult_bwd(const float *h, const float *f, const float *x, const float *gh, float *gf, float *gx, float *ghinit, int SEQ, int BATCH, int HIDDEN)
+{
+  /*
+  This is the backward pass for a backward_forget_mult.
+  Note: h is assumed to be one timestep longer than f, x, gf, gx, or gh where dst[0] = h_{-1}
+  This means dst array has a separate index than that of f or x
+  */
+  int hid = blockIdx.x * blockDim.x + threadIdx.x;
+  int bid = blockIdx.y * blockDim.y + threadIdx.y;
+  if(hid >= HIDDEN || bid >= BATCH)
+     return;
+  //
+  double running_f = 0;
+  for (int ts = 0; ts < SEQ; ts++) {
+     int i           = (ts - 0) * HIDDEN * BATCH + bid * HIDDEN + hid;
+     int dst_iplus1  = (ts + 1) * HIDDEN * BATCH + bid * HIDDEN + hid;
+     //
+     running_f       += gh[i];
+     // Gradient of X
+     gx[i]           = f[i] * running_f;
+     // Gradient of F
+     gf[i]           = (x[i] - h[dst_iplus1]) * running_f;
+     //
+     // The line below is likely more numerically stable than (1 - f[i]) * running_f;
+     running_f       = running_f - f[i] * running_f;
+  }
+  ghinit[bid * HIDDEN + hid] = running_f;
+}
 '''
 
 ###
 
 class CPUForgetMult(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, backwards=False):
         super(CPUForgetMult, self).__init__()
+        self.backwards = backwards
 
     def forward(self, f, x, hidden_init=None):
         result = []
         ###
         forgets = f.split(1, dim=0)
         prev_h = hidden_init
-        for i, h in enumerate((f * x).split(1, dim=0)):
+        fx = enumerate((f * x).split(1, dim=0))
+        if self.backwards: fx = reversed(list(fx))
+        for i, h in fx:
             if prev_h is not None: h = h + (1 - forgets[i]) * prev_h
             # h is (1, batch, hidden) when it needs to be (batch_hidden)
             # Calling squeeze will result in badness if batch size is 1
@@ -88,33 +150,40 @@ class CPUForgetMult(torch.nn.Module):
             result.append(h)
             prev_h = h
         ###
+        if self.backwards: result.reverse()
         return torch.stack(result)
 
 
 class GPUForgetMult(torch.autograd.Function):
     configured_gpus = {}
     ptx = None
-    def __init__(self):
+    def __init__(self, backwards=False):
         super(GPUForgetMult, self).__init__()
+        self.backwards = backwards
 
     def compile(self):
         if self.ptx is None:
-            program = Program(kernel.encode(), 'recurrent_forget_mult.cu'.encode())
+            program = Program(kernel, 'recurrent_forget_mult.cu')
             GPUForgetMult.ptx = program.compile()
 
         if torch.cuda.current_device() not in GPUForgetMult.configured_gpus:
             m = function.Module()
             m.load(bytes(self.ptx.encode()))
 
+            # Forward ForgetMult
             self.forget_mult = m.get_function('recurrent_forget_mult')
-            self.bwd_forget_mult = m.get_function('bwd_recurrent_forget_mult')
+            self.forget_mult_bwd = m.get_function('recurrent_forget_mult_bwd')
+
+            # Backward ForgetMult
+            self.bwd_forget_mult = m.get_function('recurrent_bwd_forget_mult')
+            self.bwd_forget_mult_bwd = m.get_function('recurrent_bwd_forget_mult_bwd')
 
             Stream = namedtuple('Stream', ['ptr'])
             self.stream = Stream(ptr=torch.cuda.current_stream().cuda_stream)
 
-            GPUForgetMult.configured_gpus[torch.cuda.current_device()] = (self.forget_mult, self.bwd_forget_mult, self.stream)
+            GPUForgetMult.configured_gpus[torch.cuda.current_device()] = (self.forget_mult, self.forget_mult_bwd, self.bwd_forget_mult, self.bwd_forget_mult_bwd, self.stream)
 
-        self.forget_mult, self.bwd_forget_mult, self.stream = GPUForgetMult.configured_gpus[torch.cuda.current_device()]
+        self.forget_mult, self.forget_mult_bwd, self.bwd_forget_mult, self.bwd_forget_mult_bwd, self.stream = GPUForgetMult.configured_gpus[torch.cuda.current_device()]
 
     def forward(self, f, x, hidden_init=None):
         self.compile()
@@ -122,14 +191,20 @@ class GPUForgetMult(torch.autograd.Function):
         result = f.new(seq_size + 1, batch_size, hidden_size)
         # We only zero the result array (result[0]) if we don't set a hidden initial state
         # All other values (result[1:]) are overwritten by default
-        if hidden_init is not None: result[0, :, :] = hidden_init
+        if hidden_init is not None:
+            # If we move backwards, the hidden state goes at the end
+            if self.backwards: result[-1, :, :] = hidden_init
+            else: result[0, :, :] = hidden_init
         else: result = result.zero_()
         ###
         grid_hidden_size = min(hidden_size, 512)
         grid = (math.ceil(hidden_size / grid_hidden_size), batch_size)
-        self.forget_mult(grid=grid, block=(grid_hidden_size, 1), args=[result.data_ptr(), f.data_ptr(), x.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
+        forget_mult = self.bwd_forget_mult if self.backwards else self.forget_mult
+        forget_mult(grid=grid, block=(grid_hidden_size, 1), args=[result.data_ptr(), f.data_ptr(), x.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
         self.save_for_backward(f, x, hidden_init)
         self.result = result
+        # For a backward forget mult, skip the hidden state at the end
+        if self.backwards: return result[:-1, :, :]
         return result[1:, :, :]
 
     def backward(self, grad_h):
@@ -145,7 +220,8 @@ class GPUForgetMult(torch.autograd.Function):
         ###
         grid_hidden_size = min(hidden_size, 512)
         grid = (math.ceil(hidden_size / grid_hidden_size), batch_size)
-        self.bwd_forget_mult(grid=grid, block=(grid_hidden_size, 1), args=[h.data_ptr(), f.data_ptr(), x.data_ptr(), grad_h.data_ptr(), grad_f.data_ptr(), grad_x.data_ptr(), grad_h_init.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
+        bwd_forget_mult = self.bwd_forget_mult_bwd if self.backwards else self.forget_mult_bwd
+        bwd_forget_mult(grid=grid, block=(grid_hidden_size, 1), args=[h.data_ptr(), f.data_ptr(), x.data_ptr(), grad_h.data_ptr(), grad_f.data_ptr(), grad_x.data_ptr(), grad_h_init.data_ptr(), seq_size, batch_size, hidden_size], stream=self.stream)
         ###
         if hidden_init is not None:
             return grad_f, grad_x, grad_h_init
@@ -163,10 +239,12 @@ class ForgetMult(torch.nn.Module):
         - F (seq_len, batch, input_size): tensor containing the forget gate values, assumed in range [0, 1].
         - hidden_init (batch, input_size): tensor containing the initial hidden state for the recurrence (h_{t-1}).
         - use_cuda: If True, use the fast element-wise CUDA kernel for recurrence. If False, uses naive for loop. Default: True.
+        - backwards: If True, the ForgetMult traverses the sequence in reverse order from end to start. Default: False.
     """
 
-    def __init__(self):
+    def __init__(self, backwards=False):
         super(ForgetMult, self).__init__()
+        self.backwards = backwards
 
     def forward(self, f, x, hidden_init=None, use_cuda=True):
         # Use CUDA by default unless it's available
@@ -175,8 +253,8 @@ class ForgetMult(torch.nn.Module):
         if use_cuda: assert f.is_cuda and x.is_cuda, 'GPU ForgetMult with fast element-wise CUDA kernel requested but tensors not on GPU'
         ###
         # Avoiding 'RuntimeError: expected a Variable argument, but got NoneType' when hidden_init is None
-        if hidden_init is None: return GPUForgetMult()(f, x) if use_cuda else CPUForgetMult()(f, x)
-        return GPUForgetMult()(f, x, hidden_init) if use_cuda else CPUForgetMult()(f, x, hidden_init)
+        if hidden_init is None: return GPUForgetMult(backwards=self.backwards)(f, x) if use_cuda else CPUForgetMult(backwards=self.backwards)(f, x)
+        return GPUForgetMult(backwards=self.backwards)(f, x, hidden_init) if use_cuda else CPUForgetMult(backwards=self.backwards)(f, x, hidden_init)
 
 ###
 
@@ -194,6 +272,8 @@ if __name__ == '__main__':
     #last_h = Variable(torch.Tensor([0]).view(batch, hidden).cuda(), requires_grad=True)
     #print(forget, a, last_h)
 
+    ### Check fwd forget mult
+
     print('CUDA forget mult')
     print('=-=-' * 5)
 
@@ -202,10 +282,10 @@ if __name__ == '__main__':
     loss = resulta.pow(2).sum()
     loss.backward()
 
-    print('Result =', loss.data[0])
-    print('X grad =', a.grad.mean().data[0])
-    print('Forget grad =', forget.grad.mean().data[0])
-    print('Last H grad =', last_h.grad.mean().data[0])
+    print('Result =', loss.item())
+    print('X grad =', a.grad.mean().item())
+    print('Forget grad =', forget.grad.mean().item())
+    print('Last H grad =', last_h.grad.mean().item())
 
     x_grad_copy = a.grad.clone()
 
@@ -222,23 +302,73 @@ if __name__ == '__main__':
     loss = resultb.pow(2).sum()
     loss.backward()
 
-    print('Result =', loss.data[0])
-    print('X grad =', a.grad.mean().data[0])
-    print('Forget grad =', forget.grad.mean().data[0])
-    print('Last H grad =', last_h.grad.mean().data[0])
+    print('Result =', loss.item())
+    print('X grad =', a.grad.mean().item())
+    print('Forget grad =', forget.grad.mean().item())
+    print('Last H grad =', last_h.grad.mean().item())
 
     ###
 
     print()
     print('=-=-' * 5)
-    print('(Xgrad - Xgrad).sum() =', (x_grad_copy - a.grad).sum().data[0])
+    print('(Xgrad - Xgrad).sum() =', (x_grad_copy - a.grad).sum().item())
     print('Residual error for result')
     print('=-=-' * 5)
     residual = (resulta - resultb)
-    print(residual.abs().sum().data[0])
- 
+    print(residual.abs().sum().item())
+
     # Had to loosen gradient checking, potentially due to general floating point badness?
     from torch.autograd import gradcheck
     inputs = [forget, a, last_h]
     test = gradcheck(ForgetMult(), inputs, eps=1e-4, atol=1e-2)
+    print(test)
+
+    ### Check bwd forget mult
+
+    print()
+    print('CUDA backward forget mult')
+    print('=-=-' * 5)
+
+    resulta = ForgetMult(backwards=True)(forget, a, last_h, use_cuda=True)
+    print(resulta.size())
+    loss = resulta.pow(2).sum()
+    loss.backward()
+
+    print('Result =', loss.item())
+    print('X grad =', a.grad.mean().item())
+    print('Forget grad =', forget.grad.mean().item())
+    print('Last H grad =', last_h.grad.mean().item())
+
+    x_grad_copy = a.grad.clone()
+
+    print()
+    print('CPU backward forget mult')
+    print('=-=-' * 5)
+
+    a.grad.data *= 0
+    forget.grad.data *= 0
+    last_h.grad.data *= 0
+
+    resultb = ForgetMult(backwards=True)(forget, a, last_h, use_cuda=False)
+    print(resultb.size())
+    loss = resultb.pow(2).sum()
+    loss.backward()
+
+    print('Result =', loss.item())
+    print('X grad =', a.grad.mean().item())
+    print('Forget grad =', forget.grad.mean().item())
+    print('Last H grad =', last_h.grad.mean().item())
+
+    ###
+
+    print()
+    print('=-=-' * 5)
+    print('(Xgrad - Xgrad).sum() =', (x_grad_copy - a.grad).sum().item())
+    print('Residual error for result')
+    print('=-=-' * 5)
+    residual = (resulta - resultb)
+    print(residual.abs().sum().item())
+
+    inputs = [forget, a, last_h]
+    test = gradcheck(ForgetMult(backwards=True), inputs, eps=1e-4, atol=1e-2)
     print(test)
