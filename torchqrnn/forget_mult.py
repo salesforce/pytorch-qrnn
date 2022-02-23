@@ -169,7 +169,7 @@ class ForgetMult(torch.nn.Module):
         super(ForgetMult, self).__init__()
 
     def forward(self, f, x, hidden_init=None, use_cuda=True):
-        # Use CUDA by default unless it's available
+        # Use CUDA by default unless it's not available
         use_cuda = use_cuda and torch.cuda.is_available()
         # Ensure the user is aware when ForgetMult is not GPU version as it's far faster
         if use_cuda: assert f.is_cuda and x.is_cuda, 'GPU ForgetMult with fast element-wise CUDA kernel requested but tensors not on GPU'
