@@ -1,7 +1,8 @@
 import math
 import torch
 from torch.autograd import Variable
-from cupy.cuda import function
+if torch.cuda.is_available():
+  from cupy.cuda import function
 from pynvrtc.compiler import Program
 from collections import namedtuple
 
@@ -236,7 +237,7 @@ if __name__ == '__main__':
     print('=-=-' * 5)
     residual = (resulta - resultb)
     print(residual.abs().sum().data[0])
- 
+
     # Had to loosen gradient checking, potentially due to general floating point badness?
     from torch.autograd import gradcheck
     inputs = [forget, a, last_h]
