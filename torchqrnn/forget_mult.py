@@ -202,10 +202,10 @@ if __name__ == '__main__':
     loss = resulta.pow(2).sum()
     loss.backward()
 
-    print('Result =', loss.data[0])
-    print('X grad =', a.grad.mean().data[0])
-    print('Forget grad =', forget.grad.mean().data[0])
-    print('Last H grad =', last_h.grad.mean().data[0])
+    print('Result =', loss.item())
+    print('X grad =', a.grad.mean().item())
+    print('Forget grad =', forget.grad.mean().item())
+    print('Last H grad =', last_h.grad.mean().item())
 
     x_grad_copy = a.grad.clone()
 
@@ -222,20 +222,20 @@ if __name__ == '__main__':
     loss = resultb.pow(2).sum()
     loss.backward()
 
-    print('Result =', loss.data[0])
-    print('X grad =', a.grad.mean().data[0])
-    print('Forget grad =', forget.grad.mean().data[0])
-    print('Last H grad =', last_h.grad.mean().data[0])
+    print('Result =', loss.item())
+    print('X grad =', a.grad.mean().item())
+    print('Forget grad =', forget.grad.mean().item())
+    print('Last H grad =', last_h.grad.mean().item())
 
     ###
 
     print()
     print('=-=-' * 5)
-    print('(Xgrad - Xgrad).sum() =', (x_grad_copy - a.grad).sum().data[0])
+    print('(Xgrad - Xgrad).sum() =', (x_grad_copy - a.grad).sum().item())
     print('Residual error for result')
     print('=-=-' * 5)
     residual = (resulta - resultb)
-    print(residual.abs().sum().data[0])
+    print(residual.abs().sum().item())
  
     # Had to loosen gradient checking, potentially due to general floating point badness?
     from torch.autograd import gradcheck

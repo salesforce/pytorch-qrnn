@@ -197,7 +197,7 @@ if __name__ == '__main__':
     qrnn.use_cuda = False
     Z, _ = qrnn(X)
 
-    diff = (Y - Z).sum().data[0]
+    diff = (Y - Z).sum().item()
     print('Total difference between QRNN(use_cuda=True) and QRNN(use_cuda=False) results:', diff)
     assert diff < 1e-5, 'CUDA and non-CUDA QRNN layers return different results'
 
